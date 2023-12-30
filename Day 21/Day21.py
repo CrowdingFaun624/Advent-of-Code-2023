@@ -1,5 +1,6 @@
 from pathlib2 import Path
 from typing import Generator, Iterable, TypeVar
+import z3
 
 def load_document(name:str) -> str:
     if isinstance(name, str):
@@ -143,37 +144,34 @@ class InfiniteMap(Map):
                 if steps_target_index >= len(steps): break    
 
     def smart_get_steps_away(self, steps:int) -> int:
-        # I'm too lazy to write the code to find these variables. Find them yourself or something, idk
-        cycle_length = 131 # amount of steps it takes after each in-line with the empty patch it takes to be in-line again. (e.g. 61, 192, 323)
-        cycle_start = 61 # initial amount of steps it takes for steps to be in-line with the empty patch
-        empty_patch_end = 68
+        # Data can be represented perfectly with a quadratic
+        cycle_length = max(node.x for node in self.nodes) + 1 # amount of steps it takes after each in-line with the empty patch it takes to be in-line again. (e.g. 61, 192, 323)
+        assert max(node.y for node in self.nodes) + 1 == cycle_length
 
         cycle_round = None
-        for cycle_round in range(cycle_start, empty_patch_end + 1):
+        for cycle_round in range(0, cycle_length):
             if ((int(((steps - cycle_round) / cycle_length) * 65536)) / 65536) % 1 == 0:
                 break
             cycle_repeats = int((steps - cycle_round) / cycle_length)
         else:
             raise RuntimeError("Could not find a cycle!")
         
-        # middle_point = (empty_patch_end + 1 - cycle_start) // 2
-        # print(middle_point)
-        # even_center_count, odd_center_count = (len(result) for result in self.get_steps_away([cycle_round - 1, cycle_round]))
-        # odd_edge_count = [len(result) for result in self.get_steps_away([cycle_round - 1], (self.width, self.height - 1), write_file=None)][0]
-        # even_edge_count = [len(result) for result in self.get_steps_away([cycle_round - 1], (self.width, self.height), write_file=0)][0]
-        # # nodes_per_surface = (reachable_round - reachable_start) / 4
+        y_values = (len(result) for result in self.get_steps_away(list(range(cycle_round, cycle_round + cycle_length * 3, cycle_length))))
 
-        # odd_center_diamonds = (cycle_repeats + 1) ** 2
-        # even_center_diamonds = cycle_repeats ** 2
-        # even_edge_diamonds = odd_edge_diamonds = (cycle_repeats) ** 2 + cycle_repeats
-        # print(cycle_repeats, odd_center_diamonds, even_center_diamonds, even_edge_diamonds, odd_edge_diamonds)
-        # print(even_center_count, odd_center_count, even_edge_count, odd_edge_count)
-        # return even_center_count * even_center_diamonds + odd_center_count * odd_center_diamonds + even_edge_count * even_edge_diamonds + odd_edge_count * odd_edge_diamonds
+        a = z3.Const("a", sort=z3.IntSort())
+        b = z3.Const("b", sort=z3.IntSort())
+        c = z3.Const("c", sort=z3.IntSort())
+        solver = z3.Solver()
+        for x, y in enumerate(y_values):
+            solver.add(y == a * x ** 2 + b * x + c)
+        
+        solver.check()
+        model = solver.model()
 
-        # I got bored of this stuff and this solution works for my input. Used quadratic regression calculator on WolframAlpha to find this.
-        result = 14590 * cycle_repeats**2 + 14694 * cycle_repeats + 3691
-        print(result)
-        return round(result)
+        a, b, c = int(str(model[a])), int(str(model[b])), int(str(model[c]))
+
+        result = a * cycle_repeats**2 + b * cycle_repeats + c
+        return result
 
 def parse_map(document:str, infinite:bool) -> Map|InfiniteMap:
     nodes:list[Node] = list(flatten((Node(x, y, NODE_TYPES[NODE_TYPES.index(char)]) for x, char in enumerate(line)) for y, line in enumerate(document.split("\n"))))
